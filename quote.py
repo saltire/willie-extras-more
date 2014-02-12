@@ -12,11 +12,28 @@ import random
 import re
 
 from willie.module import commands, priority, rule, thread
+from willie.config import ConfigurationError
 
 
 def setup(bot):
     bot.memory['nickmem'] = {}
-    bot.memory['nickquotes'] = {}
+
+    if not bot.db:
+        raise ConfigurationError("Database not set up, or unavailable.")
+    conn = bot.db.connect()
+    c = conn.cursor()
+
+    try:
+        c.execute('SELECT * FROM quotes')
+    except StandardError:
+        c.execute('''CREATE TABLE IF NOT EXISTS quotes (
+            channel TEXT,
+            nick TEXT,
+            quote TEXT
+            )''')
+        conn.commit()
+
+    conn.close()
 
 
 def normalize(text):
@@ -26,8 +43,7 @@ def normalize(text):
 @thread(False)
 @commands('remember')
 def save_quote(bot, trigger):
-    """Given a user's nick, save the last message from that user.
-    If a word is specified, look for the last message containing that word."""
+    """Save the last message from a user, or the last one containing a given word."""
     nick = trigger.group(3)
     word = trigger.group(4)
     nickmem = bot.memory['nickmem'].get(trigger.sender, {}).get(nick, [])
@@ -35,7 +51,15 @@ def save_quote(bot, trigger):
     try:
         quote = next(msg for msg in nickmem if
                      not word or normalize(word) in normalize(msg).split())
-        bot.memory['nickquotes'].setdefault(trigger.sender, {}).setdefault(nick, []).append(quote)
+
+        sub = bot.db.substitution
+        conn = bot.db.connect()
+        c = conn.cursor()
+        c.execute('INSERT INTO quotes VALUES ({0},{0},{0})'.format(sub),
+                  (trigger.sender, nick, quote))
+        conn.commit()
+        conn.close()
+
         bot.reply("Remembered {0} saying: {1}".format(nick, quote))
 
     except StopIteration:
@@ -46,15 +70,20 @@ def save_quote(bot, trigger):
 @thread(False)
 @commands('quote')
 def read_quote(bot, trigger):
-    """Given a user's nick, read out a random quote from that user.
-    If a word is specified, read out the last quote containing that word."""
+    """Read out a random quote from a user, or look for one containing a given word."""
     nick = trigger.group(3)
     word = trigger.group(4)
-    nickquotes = bot.memory['nickquotes'].get(trigger.sender, {}).get(nick, [])
+
+    sub = bot.db.substitution
+    conn = bot.db.connect()
+    c = conn.cursor()
+    c.execute('SELECT quote FROM quotes WHERE channel = {0} AND nick = {0}'.format(sub),
+              (trigger.sender, nick))
+    nickquotes = c.fetchall()
 
     try:
-        quote = random.choice([msg for msg in reversed(nickquotes) if
-                               not word or normalize(word) in normalize(msg).split()])
+        quote = random.choice([msg[0] for msg in reversed(nickquotes) if
+                               not word or normalize(word) in normalize(msg[0]).split()])
         bot.say("<{0}> {1}".format(nick, quote))
 
     except IndexError:
