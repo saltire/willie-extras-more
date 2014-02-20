@@ -46,6 +46,10 @@ def save_quote(bot, trigger):
     """Save the last message from a user, or the last one containing a given word."""
     nick = trigger.group(3)
     word = trigger.group(4)
+
+    if not nick:
+        return
+
     nickmem = bot.memory['nickmem'].get(trigger.sender, {}).get(nick, [])
 
     try:
@@ -73,6 +77,9 @@ def read_quote(bot, trigger):
     """Read out a random quote from a user, or look for one containing a given word."""
     nick = trigger.group(3)
     word = trigger.group(4)
+
+    if not nick:
+        return
 
     sub = bot.db.substitution
     conn = bot.db.connect()
