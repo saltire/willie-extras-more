@@ -78,17 +78,26 @@ def read_quote(bot, trigger):
     nick = trigger.group(3)
     word = trigger.group(4)
 
-    if not nick:
-        return
-
     sub = bot.db.substitution
     conn = bot.db.connect()
     c = conn.cursor()
+
+    # If no nick specified, pick one at random.
+    if not nick:
+        c.execute('SELECT DISTINCT(nick) FROM quotes WHERE channel = {0}'.format(sub),
+                  (trigger.sender,))
+        nicks = c.fetchall()
+        if not nicks:
+            bot.reply("Sorry, I don't know any quotes. Use .remember to add some.")
+            return
+        nick = random.choice(nicks[0])
+
+    # Pull all quotes from the selected nick.
     c.execute('SELECT quote FROM quotes WHERE channel = {0} AND nick = {0}'.format(sub),
               (trigger.sender, nick))
     nickquotes = c.fetchall()
-
     try:
+        # Pick a random quote, optionally filtering by a word.
         quote = random.choice([msg[0] for msg in reversed(nickquotes) if
                                not word or normalize(word) in normalize(msg[0]).split()])
         bot.say("<{0}> {1}".format(nick, quote))
@@ -96,6 +105,19 @@ def read_quote(bot, trigger):
     except IndexError:
         bot.reply("Sorry, I don't remember what {0} said about '{1}'.".format(nick, word)
                   if word else "Sorry, I don't have any quotes from {0}.".format(nick))
+
+
+#@thread(False)
+#@commands('forgetall')
+#def forget_all_quotes(bot, trigger):
+#    """Forget all known quotes. This is a debug command."""
+#    conn = bot.db.connect()
+#    c = conn.cursor()
+#
+#    c.execute('DELETE FROM quotes')
+#
+#    conn.commit()
+#    conn.close()
 
 
 @priority('low')
